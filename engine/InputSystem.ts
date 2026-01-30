@@ -123,7 +123,7 @@ export class InputSystem {
         const x = Math.floor(localPos.x); // Sử dụng tọa độ khi nhấc tay
         const y = Math.floor(localPos.y);
         
-        this.engine.handleInputUp(x, y);
+        this.engine.handleInputUp(x, y, e.originalEvent as unknown as PointerEvent);
         this.engine.saveState();
     }
     this.isDrawing = false;
@@ -137,7 +137,7 @@ export class InputSystem {
     const x = Math.floor(localPos.x);
     const y = Math.floor(localPos.y);
 
-    this.engine.handleInput(x, y, this.lastPos);
+    this.engine.handleInput(x, y, this.lastPos, e.originalEvent as unknown as PointerEvent);
     this.lastPos = { x, y };
   }
 }

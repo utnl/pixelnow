@@ -12,7 +12,14 @@ export default function CanvasHost() {
     undoTrigger, redoTrigger, deleteSelectionTrigger,
     flipHTrigger, flipVTrigger, rotateTrigger,
     importTrigger, exportTrigger,
-    setSelectionArea
+    // Layer store
+    addLayerTrigger, duplicateLayerTrigger, deleteLayerTrigger, toggleLayerVisibilityTrigger, toggleAllLayerVisibilityTrigger, setActiveLayerTrigger,
+    
+    // Animation store
+    addFrameTrigger, deleteFrameTrigger, togglePlayTrigger, goToFrameTrigger,
+    setFrameInfo,
+    
+    setSelectionArea, setLayers
   } = useEditorStore();
 
   const pencilCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z'/%3E%3C/svg%3E") 0 24, auto`;
@@ -39,7 +46,28 @@ export default function CanvasHost() {
         useEditorStore.setState({ canvasWidth: w, canvasHeight: h });
     };
 
+    engine.onLayerChanged = () => {
+        // Sync layers to store
+        const uiLayers = engine.layerManager.layers.map((l, i) => ({
+            id: l.id,
+            name: l.name,
+            visible: l.visible,
+            active: i === engine.layerManager.activeLayerIndex
+        })).reverse();
+        
+        setLayers(uiLayers);
+    };
+
     engine.init(containerRef.current, width, height);
+    
+    // Initial sync
+    engine.onLayerChanged();
+    
+    engine.onFrameChanged = (current, total) => {
+         setFrameInfo(current, total, engine.isPlaying());
+         if (engine.onLayerChanged) engine.onLayerChanged();
+    };
+    engine.onFrameChanged(0, 1);
 
     engine.setTool(tool);
     engine.setColor(primaryColor);
@@ -127,6 +155,64 @@ export default function CanvasHost() {
         engineRef.current.fileManager.exportPNG();
     }
   }, [exportTrigger]);
+
+  // Layer triggers
+  useEffect(() => {
+      if (engineRef.current && addLayerTrigger > 0) {
+          engineRef.current.addLayer();
+      }
+  }, [addLayerTrigger]);
+
+  useEffect(() => {
+      if (engineRef.current && duplicateLayerTrigger > 0) {
+          engineRef.current.duplicateActiveLayer();
+      }
+  }, [duplicateLayerTrigger]);
+
+  useEffect(() => {
+      if (engineRef.current && deleteLayerTrigger > 0) {
+          engineRef.current.deleteActiveLayer();
+      }
+  }, [deleteLayerTrigger]);
+
+  useEffect(() => {
+      if (engineRef.current && toggleLayerVisibilityTrigger) {
+          const { id } = toggleLayerVisibilityTrigger;
+          const idx = engineRef.current.layerManager.layers.findIndex(l => l.id === id);
+          if (idx !== -1) engineRef.current.toggleLayerVisibility(idx);
+      }
+  }, [toggleLayerVisibilityTrigger]);
+
+  useEffect(() => {
+      if (engineRef.current && toggleAllLayerVisibilityTrigger > 0) {
+          engineRef.current.toggleAllLayerVisibility();
+      }
+  }, [toggleAllLayerVisibilityTrigger]);
+
+  useEffect(() => {
+      if (engineRef.current && setActiveLayerTrigger) {
+          const { id } = setActiveLayerTrigger;
+          const idx = engineRef.current.layerManager.layers.findIndex(l => l.id === id);
+          if (idx !== -1) engineRef.current.setActiveLayer(idx);
+      }
+  }, [setActiveLayerTrigger]);
+
+  // Animation Effects
+  useEffect(() => {
+    if (engineRef.current && addFrameTrigger > 0) engineRef.current.addFrame();
+  }, [addFrameTrigger]);
+
+  useEffect(() => {
+    if (engineRef.current && deleteFrameTrigger > 0) engineRef.current.deleteFrame();
+  }, [deleteFrameTrigger]);
+
+  useEffect(() => {
+    if (engineRef.current && togglePlayTrigger > 0) engineRef.current.togglePlay();
+  }, [togglePlayTrigger]);
+
+  useEffect(() => {
+    if (engineRef.current && goToFrameTrigger) engineRef.current.goToFrame(goToFrameTrigger.index);
+  }, [goToFrameTrigger]);
 
   return (
     <div 

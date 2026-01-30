@@ -12,6 +12,9 @@ import { SelectionTool } from './tools/SelectionTool';
 import { HistorySystem } from './HistorySystem';
 import { SelectionManager } from './SelectionManager';
 import { FileManager } from './FileManager';
+import { HandTool } from './tools/HandTool';
+import { AnimationManager } from './AnimationManager';
+
 
 
 export class PixelEngine {
@@ -24,12 +27,96 @@ export class PixelEngine {
   public historySystem: HistorySystem;
   public selectionManager: SelectionManager;
   public fileManager: FileManager;
+  public animationManager: AnimationManager;
 
   public onColorPicked?: (color: number) => void;
   public onSelectionChanged?: (area: {x: number, y: number, width: number, height: number} | null) => void;
   public onCanvasSizeChanged?: (width: number, height: number) => void;
+  public onLayerChanged?: () => void;
+  public onFrameChanged?: (current: number, total: number) => void;
   
   public activeTool: Tool;
+
+  // ...
+
+  public getLayerPixel(layerIndex: number, x: number, y: number): number {
+    const targetIndex = layerIndex === -1 ? this.layerManager.activeLayerIndex : layerIndex;
+    if (targetIndex < 0 || targetIndex >= this.layerManager.layers.length) return 0;
+    
+    // Check bounds
+    if (x < 0 || x >= this.layerManager.width || y < 0 || y >= this.layerManager.height) return 0;
+    
+    const layer = this.layerManager.layers[targetIndex];
+    if (!layer || !layer.visible) return 0; // Ignore hidden layers when picking? usually yes.
+
+    const idx = y * this.layerManager.width + x;
+    return layer.data[idx];
+  }
+
+  public drawPixel(x: number, y: number, colorOverride?: number, shouldUpdate: boolean = true) {
+     const color = colorOverride !== undefined ? colorOverride : this.primaryColor;
+     // Use -1 for active layer
+     this.layerManager.setPixel(-1, x, y, color);
+     if (shouldUpdate) {
+        this.layerManager.updateLayer(-1);
+     }
+  }
+
+  public updateLayer(layerIndex: number = -1) {
+    this.layerManager.updateLayer(layerIndex);
+  }
+
+  // --- Animation API Wrappers ---
+  public addFrame() { this.animationManager.addFrame(true); } 
+  public addEmptyFrame() { this.animationManager.addFrame(false); }
+  public deleteFrame() { this.animationManager.deleteCurrentFrame(); }
+  public togglePlay() { this.animationManager.togglePlay(); }
+  public nextFrame() { 
+      const next = this.animationManager.currentFrameIndex + 1;
+      if (next < this.animationManager.frames.length) this.animationManager.loadFrame(next);
+  }
+  public prevFrame() {
+      const prev = this.animationManager.currentFrameIndex - 1;
+      if (prev >= 0) this.animationManager.loadFrame(prev);
+  }
+  public goToFrame(index: number) { this.animationManager.loadFrame(index); }
+  public isPlaying() { return this.animationManager.isPlaying; }
+
+  // --- Layer API Wrappers ---
+  public addLayer() {
+      this.layerManager.addLayer();
+      this.historySystem.saveState();
+      if (this.onLayerChanged) this.onLayerChanged();
+  }
+
+  public duplicateActiveLayer() {
+      this.layerManager.duplicateLayer(this.layerManager.activeLayerIndex);
+      this.historySystem.saveState();
+      if (this.onLayerChanged) this.onLayerChanged();
+  }
+
+  public deleteActiveLayer() {
+      this.layerManager.deleteActiveLayer();
+      this.historySystem.saveState();
+      if (this.onLayerChanged) this.onLayerChanged();
+  }
+
+  public setActiveLayer(index: number) {
+      this.layerManager.setActiveLayer(index);
+      if (this.onLayerChanged) this.onLayerChanged();
+  }
+
+  public toggleLayerVisibility(index: number) {
+      this.layerManager.toggleVisibility(index);
+      if (this.onLayerChanged) this.onLayerChanged();
+  }
+
+  public toggleAllLayerVisibility() {
+      this.layerManager.toggleAllVisibility();
+      if (this.onLayerChanged) this.onLayerChanged();
+  }
+
+  // ...
   public primaryColor: number = 0xFFFFFFFF; // White default
   public brushSize: number = 1;
   
@@ -46,6 +133,8 @@ export class PixelEngine {
     this.inputSystem = new InputSystem(this);
     this.historySystem = new HistorySystem(this);
     this.selectionManager = new SelectionManager(this);
+    this.selectionManager = new SelectionManager(this);
+    this.animationManager = new AnimationManager(this);
     this.fileManager = new FileManager(this);
     
     // Default Tool
@@ -177,10 +266,22 @@ export class PixelEngine {
   public redo() { this.historySystem.redo(); }
   public saveState() { this.historySystem.saveState(); }
 
-  public handleInput(x: number, y: number, lastPos: {x: number, y: number} | null) {
+  public handleInput(x: number, y: number, lastPos: {x: number, y: number} | null, event?: PointerEvent) {
       if (!this.activeTool) return;
+      
+      // Hand tool handled differently (screen space delta)
+      if (this.activeTool.name === 'hand') {
+          if (!lastPos) {
+             this.activeTool.onDown(x, y, this, event);
+          } else {
+             this.activeTool.onMove(x, y, this, event);
+          }
+          return;
+      }
+
+      // Normal tools (Pixel space with Bresenham)
       if (!lastPos) {
-          this.activeTool.onDown(x, y, this);
+          this.activeTool.onDown(x, y, this, event);
       } else {
           let x0 = lastPos.x;
           let y0 = lastPos.y;
@@ -192,7 +293,7 @@ export class PixelEngine {
           const sy = y0 < y1 ? 1 : -1;
           let err = dx - dy;
           while (true) {
-              this.activeTool.onMove(x0, y0, this);
+              this.activeTool.onMove(x0, y0, this, event);
               if (x0 === x1 && y0 === y1) break;
               const e2 = 2 * err;
               if (e2 > -dy) { err -= dy; x0 += sx; }
@@ -201,9 +302,9 @@ export class PixelEngine {
       }
   }
 
-  public handleInputUp(x: number, y: number) {
+  public handleInputUp(x: number, y: number, event?: PointerEvent) {
       if (this.activeTool) {
-          this.activeTool.onUp(x, y, this);
+          this.activeTool.onUp(x, y, this, event);
       }
   }
 
@@ -221,34 +322,13 @@ export class PixelEngine {
       if (toolName === 'eyedropper') this.activeTool = new EyedropperTool();
       if (toolName === 'rectangle') this.activeTool = new RectangleTool();
       if (toolName === 'selection') this.activeTool = new SelectionTool();
-  }
-
-  public getLayerPixel(layerIndex: number, x: number, y: number): number {
-      const layer = this.layerManager.layers[layerIndex];
-      if (!layer) return 0;
-      const idx = y * this.layerManager.width + x;
-      return layer.data[idx];
-  }
-
-  public drawPixel(x: number, y: number, colorOverride?: number, shouldUpdate: boolean = true) {
-      const layerIndex = 0; 
-      const color = colorOverride !== undefined ? colorOverride : this.primaryColor;
-      if (this.brushSize <= 1) {
-          this.layerManager.setPixel(layerIndex, x, y, color);
-      } else {
-          const offset = Math.floor(this.brushSize / 2);
-          for (let dy = -offset; dy < -offset + this.brushSize; dy++) {
-              for (let dx = -offset; dx < -offset + this.brushSize; dx++) {
-                  this.layerManager.setPixel(layerIndex, x + dx, y + dy, color);
-              }
-          }
+      if (toolName === 'hand') this.activeTool = new HandTool();
+      
+      if (this.app?.canvas) {
+          this.app.canvas.style.cursor = toolName === 'hand' ? 'grab' : 'default';
       }
-      if (shouldUpdate) this.layerManager.updateTexture(layerIndex);
   }
 
-  public updateLayer(layerIndex: number = 0) {
-      this.layerManager.updateTexture(layerIndex);
-  }
 
   destroy() {
     this.isDestroyed = true;

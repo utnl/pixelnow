@@ -113,7 +113,7 @@ export class SelectionManager {
     let pixelCount = 0;
     for (let dy = 0; dy < height; dy++) {
       for (let dx = 0; dx < width; dx++) {
-        const color = this.engine.getLayerPixel(0, x + dx, y + dy);
+        const color = this.engine.getLayerPixel(-1, x + dx, y + dy);
         this.floatingPixels[dy * width + dx] = color;
         if ((color & 0xFF000000) !== 0) pixelCount++;
         this.engine.drawPixel(x + dx, y + dy, 0, false);
@@ -122,7 +122,7 @@ export class SelectionManager {
     
     console.log('[StartMoving] Lifted', pixelCount, 'non-transparent pixels. Calling updateLayer...');
 
-    this.engine.updateLayer(0);
+    this.engine.updateLayer(-1);
     this.createPreviewSprite();
     console.log('[StartMoving] Done!');
   }
@@ -231,7 +231,7 @@ export class SelectionManager {
         }
     }
 
-    this.engine.updateLayer(0);
+    this.engine.updateLayer(-1);
     this.floatingPixels = null;
     this.originalSize = null;
     this.removePreview();
@@ -307,7 +307,7 @@ export class SelectionManager {
     } else {
         for (let dy = 0; dy < height; dy++) {
             for (let dx = 0; dx < width; dx++) {
-                data[dy * width + dx] = this.engine.getLayerPixel(0, x + dx, y + dy);
+                data[dy * width + dx] = this.engine.getLayerPixel(-1, x + dx, y + dy);
             }
         }
     }
@@ -342,7 +342,7 @@ export class SelectionManager {
             this.engine.drawPixel(x + dx, y + dy, 0, false);
           }
         }
-        this.engine.updateLayer(0);
+        this.engine.updateLayer(-1);
     }
     
     this.activeSelection = null;
