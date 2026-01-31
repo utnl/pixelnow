@@ -7,65 +7,63 @@ import { PixelEngine } from "@/engine/PixelEngine";
 export default function CanvasHost() {
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<PixelEngine | null>(null);
-  const { 
-    canvasWidth, canvasHeight, tool, primaryColor, setPrimaryColor, brushSize, 
+  const {
+    canvasWidth, canvasHeight, tool, primaryColor, setPrimaryColor, brushSize,
     undoTrigger, redoTrigger, deleteSelectionTrigger,
     flipHTrigger, flipVTrigger, rotateTrigger,
-    importTrigger, exportTrigger,
+    importTrigger, exportTrigger, exportJSONTrigger,
     // Layer store
     addLayerTrigger, duplicateLayerTrigger, deleteLayerTrigger, toggleLayerVisibilityTrigger, toggleAllLayerVisibilityTrigger, setActiveLayerTrigger,
-    
+
     // Animation store
     addFrameTrigger, deleteFrameTrigger, togglePlayTrigger, goToFrameTrigger,
     setFrameInfo,
-    
-    setSelectionArea, setLayers
+
+    setSelectionArea, setLayers,
+    // Reparent trigger
+    reparentLayerTrigger, renameLayerTrigger,
+    setEasingTrigger
   } = useEditorStore();
 
   const pencilCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z'/%3E%3C/svg%3E") 0 24, auto`;
 
   useEffect(() => {
     if (!containerRef.current) return;
-    
+
     const rect = containerRef.current.getBoundingClientRect();
     const width = rect.width || 800;
     const height = rect.height || 600;
 
     const engine = new PixelEngine();
     engineRef.current = engine;
-    
+
     engine.onColorPicked = (color: number) => {
-        setPrimaryColor(color);
+      setPrimaryColor(color);
     };
 
     engine.onSelectionChanged = (area) => {
-        setSelectionArea(area);
+      setSelectionArea(area);
     };
 
     engine.onCanvasSizeChanged = (w, h) => {
-        useEditorStore.setState({ canvasWidth: w, canvasHeight: h });
+      useEditorStore.setState({ canvasWidth: w, canvasHeight: h });
     };
 
     engine.onLayerChanged = () => {
-        // Sync layers to store
-        const uiLayers = engine.layerManager.layers.map((l, i) => ({
-            id: l.id,
-            name: l.name,
-            visible: l.visible,
-            active: i === engine.layerManager.activeLayerIndex
-        })).reverse();
-        
-        setLayers(uiLayers);
+      // Sync layers to store
+      // Sync layers directly from flattened hierarchy
+      // getFlattenedLayers already returns correct UI structure
+      setLayers(engine.layerManager.getFlattenedLayers());
     };
 
     engine.init(containerRef.current, width, height);
-    
+
     // Initial sync
     engine.onLayerChanged();
-    
+
     engine.onFrameChanged = (current, total) => {
-         setFrameInfo(current, total, engine.isPlaying());
-         if (engine.onLayerChanged) engine.onLayerChanged();
+      setFrameInfo(current, total, engine.isPlaying());
+      if (engine.onLayerChanged) engine.onLayerChanged();
     };
     engine.onFrameChanged(0, 1);
 
@@ -74,38 +72,38 @@ export default function CanvasHost() {
     engine.setBrushSize(brushSize);
 
     return () => {
-       engine.destroy();
-       if (engineRef.current === engine) {
-          engineRef.current = null;
-       }
+      engine.destroy();
+      if (engineRef.current === engine) {
+        engineRef.current = null;
+      }
     };
   }, []);
 
   // Sync canvas size
   useEffect(() => {
     if (engineRef.current) {
-        engineRef.current.resizeProject(canvasWidth, canvasHeight);
+      engineRef.current.resizeProject(canvasWidth, canvasHeight);
     }
   }, [canvasWidth, canvasHeight]);
 
   // Sync tool
   useEffect(() => {
     if (engineRef.current) {
-        engineRef.current.setTool(tool);
+      engineRef.current.setTool(tool);
     }
   }, [tool]);
 
   // Sync color
   useEffect(() => {
     if (engineRef.current) {
-        engineRef.current.setColor(primaryColor);
+      engineRef.current.setColor(primaryColor);
     }
   }, [primaryColor]);
 
   // Sync brush size
   useEffect(() => {
     if (engineRef.current) {
-        engineRef.current.setBrushSize(brushSize);
+      engineRef.current.setBrushSize(brushSize);
     }
   }, [brushSize]);
 
@@ -120,82 +118,98 @@ export default function CanvasHost() {
 
   useEffect(() => {
     if (engineRef.current && deleteSelectionTrigger > 0) {
-        engineRef.current.selectionManager.deleteSelection();
+      engineRef.current.selectionManager.deleteSelection();
     }
   }, [deleteSelectionTrigger]);
 
   useEffect(() => {
     if (engineRef.current && flipHTrigger > 0) {
-        engineRef.current.selectionManager.flipHorizontal();
+      engineRef.current.selectionManager.flipHorizontal();
     }
   }, [flipHTrigger]);
 
   useEffect(() => {
     if (engineRef.current && flipVTrigger > 0) {
-        engineRef.current.selectionManager.flipVertical();
+      engineRef.current.selectionManager.flipVertical();
     }
   }, [flipVTrigger]);
 
   useEffect(() => {
     if (engineRef.current && rotateTrigger > 0) {
-        engineRef.current.selectionManager.rotate90();
+      engineRef.current.selectionManager.rotate90();
     }
   }, [rotateTrigger]);
 
   // Import trigger
   useEffect(() => {
     if (engineRef.current && importTrigger > 0) {
-        engineRef.current.fileManager.importImage();
+      engineRef.current.fileManager.importImage();
     }
   }, [importTrigger]);
 
   // Export trigger
   useEffect(() => {
     if (engineRef.current && exportTrigger > 0) {
-        engineRef.current.fileManager.exportPNG();
+      engineRef.current.fileManager.exportPNG();
     }
   }, [exportTrigger]);
 
+  // Export JSON trigger
+  useEffect(() => {
+    if (engineRef.current && exportJSONTrigger > 0) {
+      engineRef.current.fileManager.exportJSON();
+    }
+  }, [exportJSONTrigger]);
+
   // Layer triggers
   useEffect(() => {
-      if (engineRef.current && addLayerTrigger > 0) {
-          engineRef.current.addLayer();
-      }
+    if (engineRef.current && addLayerTrigger > 0) {
+      engineRef.current.addLayer();
+    }
   }, [addLayerTrigger]);
 
   useEffect(() => {
-      if (engineRef.current && duplicateLayerTrigger > 0) {
-          engineRef.current.duplicateActiveLayer();
-      }
+    if (engineRef.current && duplicateLayerTrigger > 0) {
+      engineRef.current.duplicateActiveLayer();
+    }
   }, [duplicateLayerTrigger]);
 
   useEffect(() => {
-      if (engineRef.current && deleteLayerTrigger > 0) {
-          engineRef.current.deleteActiveLayer();
-      }
+    if (engineRef.current && deleteLayerTrigger > 0) {
+      engineRef.current.deleteActiveLayer();
+    }
   }, [deleteLayerTrigger]);
 
   useEffect(() => {
-      if (engineRef.current && toggleLayerVisibilityTrigger) {
-          const { id } = toggleLayerVisibilityTrigger;
-          const idx = engineRef.current.layerManager.layers.findIndex(l => l.id === id);
-          if (idx !== -1) engineRef.current.toggleLayerVisibility(idx);
-      }
+    if (engineRef.current && toggleLayerVisibilityTrigger) {
+      const { id } = toggleLayerVisibilityTrigger;
+      const idx = engineRef.current.layerManager.layers.findIndex(l => l.id === id);
+      if (idx !== -1) engineRef.current.toggleLayerVisibility(idx);
+    }
   }, [toggleLayerVisibilityTrigger]);
 
   useEffect(() => {
-      if (engineRef.current && toggleAllLayerVisibilityTrigger > 0) {
-          engineRef.current.toggleAllLayerVisibility();
-      }
+    if (engineRef.current && toggleAllLayerVisibilityTrigger > 0) {
+      engineRef.current.toggleAllLayerVisibility();
+    }
   }, [toggleAllLayerVisibilityTrigger]);
 
   useEffect(() => {
-      if (engineRef.current && setActiveLayerTrigger) {
-          const { id } = setActiveLayerTrigger;
-          const idx = engineRef.current.layerManager.layers.findIndex(l => l.id === id);
-          if (idx !== -1) engineRef.current.setActiveLayer(idx);
-      }
+    if (engineRef.current && setActiveLayerTrigger) {
+      const { id } = setActiveLayerTrigger;
+      engineRef.current.layerManager.setActiveNode(id);
+      engineRef.current.onLayerChanged?.(); // Refresh UI Active State
+    }
   }, [setActiveLayerTrigger]);
+
+  useEffect(() => {
+    if (engineRef.current && reparentLayerTrigger) {
+      const { childId, parentId } = reparentLayerTrigger;
+      engineRef.current.layerManager.reparentNode(childId, parentId);
+      // Trigger UI update
+      engineRef.current.onLayerChanged?.();
+    }
+  }, [reparentLayerTrigger]);
 
   // Animation Effects
   useEffect(() => {
@@ -214,12 +228,30 @@ export default function CanvasHost() {
     if (engineRef.current && goToFrameTrigger) engineRef.current.goToFrame(goToFrameTrigger.index);
   }, [goToFrameTrigger]);
 
+  useEffect(() => {
+    if (engineRef.current && renameLayerTrigger) {
+      const { id, name } = renameLayerTrigger;
+      (engineRef.current.layerManager as any).renameNode(id, name);
+      engineRef.current.onLayerChanged?.();
+    }
+  }, [renameLayerTrigger]);
+
+  useEffect(() => {
+    if (engineRef.current && setEasingTrigger) {
+      const frame = engineRef.current.animationManager.getCurrentFrame();
+      if (frame) {
+        frame.easing = setEasingTrigger.easing as any;
+        console.log("Set easing:", frame.easing);
+      }
+    }
+  }, [setEasingTrigger]);
+
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className={`flex-1 flex items-center justify-center bg-[#121212] overflow-hidden`}
-      style={{ 
-        cursor: tool === 'pencil' ? pencilCursor : tool === 'eraser' ? 'cell' : 'crosshair' 
+      style={{
+        cursor: tool === 'pencil' ? pencilCursor : tool === 'eraser' ? 'cell' : 'crosshair'
       }}
     />
   );

@@ -5,16 +5,18 @@ export interface LayerState {
   name: string;
   visible: boolean;
   active: boolean;
+  parentId?: string | null;
+  depth?: number;
 }
 
 interface EditorState {
-  tool: 'pencil' | 'eraser' | 'fill' | 'eyedropper' | 'rectangle' | 'selection' | 'hand';
+  tool: 'pencil' | 'eraser' | 'fill' | 'eyedropper' | 'rectangle' | 'selection' | 'hand' | 'pivot' | 'transform';
   primaryColor: number;
   canvasWidth: number;
   canvasHeight: number;
   zoom: number;
   brushSize: number;
-  
+
   // Triggers for Engine Actions
   undoTrigger: number;
   redoTrigger: number;
@@ -24,20 +26,25 @@ interface EditorState {
   rotateTrigger: number;
   importTrigger: number;
   exportTrigger: number;
-  
+  exportJSONTrigger: number;
+
   // Layer Triggers
   addLayerTrigger: number;
   duplicateLayerTrigger: number;
   deleteLayerTrigger: number;
   toggleLayerVisibilityTrigger: { id: string, ts: number } | null;
   toggleAllLayerVisibilityTrigger: number;
+  // Layer Trigger Props
+  reparentLayerTrigger: { childId: string, parentId: string, ts: number } | null;
+  renameLayerTrigger: { id: string, name: string, ts: number } | null;
+
   setActiveLayerTrigger: { id: string, ts: number } | null;
 
   activeSelection: { x: number, y: number, width: number, height: number } | null;
-  
+
   // UI State (Synced from Engine)
   layers: LayerState[];
-  
+
   // Animation State
   currentFrame: number;
   totalFrames: number;
@@ -48,6 +55,9 @@ interface EditorState {
   deleteFrameTrigger: number;
   togglePlayTrigger: number;
   goToFrameTrigger: { index: number, ts: number } | null;
+  setEasingTrigger: { easing: string, ts: number } | null;
+
+  triggerSetEasing: (easingType: string) => void;
 
   setTool: (tool: EditorState['tool']) => void;
   setPrimaryColor: (color: number) => void;
@@ -56,7 +66,7 @@ interface EditorState {
   setSelectionArea: (area: EditorState['activeSelection']) => void;
   setLayers: (layers: LayerState[]) => void;
   setFrameInfo: (current: number, total: number, isPlaying: boolean) => void;
-  
+
   triggerUndo: () => void;
   triggerRedo: () => void;
   triggerDeleteSelection: () => void;
@@ -65,13 +75,16 @@ interface EditorState {
   triggerRotate: () => void;
   triggerImport: () => void;
   triggerExport: () => void;
-  
+  triggerExportJSON: () => void;
+
   triggerAddLayer: () => void;
   triggerDuplicateLayer: () => void;
   triggerDeleteLayer: () => void;
   triggerToggleLayerVisibility: (id: string) => void;
   triggerToggleAllLayerVisibility: () => void;
   triggerSetActiveLayer: (id: string) => void;
+  triggerReparentLayer: (childId: string, parentId: string) => void;
+  triggerRenameLayer: (id: string, name: string) => void;
 
   triggerAddFrame: () => void;
   triggerDeleteFrame: () => void;
@@ -94,15 +107,18 @@ export const useEditorStore = create<EditorState>((set) => ({
   rotateTrigger: 0,
   importTrigger: 0,
   exportTrigger: 0,
+  exportJSONTrigger: 0,
   addLayerTrigger: 0,
   duplicateLayerTrigger: 0,
   deleteLayerTrigger: 0,
   toggleLayerVisibilityTrigger: null,
   toggleAllLayerVisibilityTrigger: 0,
   setActiveLayerTrigger: null,
+  reparentLayerTrigger: null,
+  renameLayerTrigger: null,
   activeSelection: null,
   layers: [],
-  
+
   // Animation Defaults
   currentFrame: 0,
   totalFrames: 1,
@@ -111,6 +127,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   deleteFrameTrigger: 0,
   togglePlayTrigger: 0,
   goToFrameTrigger: null,
+  setEasingTrigger: null,
 
   setTool: (tool) => set({ tool }),
   setPrimaryColor: (primaryColor) => set({ primaryColor }),
@@ -119,7 +136,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   setSelectionArea: (activeSelection) => set({ activeSelection }),
   setLayers: (layers) => set({ layers }),
   setFrameInfo: (currentFrame, totalFrames, isPlaying) => set({ currentFrame, totalFrames, isPlaying }),
-  
+
   triggerUndo: () => set((state) => ({ undoTrigger: state.undoTrigger + 1 })),
   triggerRedo: () => set((state) => ({ redoTrigger: state.redoTrigger + 1 })),
   triggerDeleteSelection: () => set((state) => ({ deleteSelectionTrigger: state.deleteSelectionTrigger + 1 })),
@@ -128,13 +145,17 @@ export const useEditorStore = create<EditorState>((set) => ({
   triggerRotate: () => set((state) => ({ rotateTrigger: state.rotateTrigger + 1 })),
   triggerImport: () => set((state) => ({ importTrigger: state.importTrigger + 1 })),
   triggerExport: () => set((state) => ({ exportTrigger: state.exportTrigger + 1 })),
-  
+  triggerExportJSON: () => set((state) => ({ exportJSONTrigger: state.exportJSONTrigger + 1 })),
+  triggerSetEasing: (easingType: string) => set({ setEasingTrigger: { easing: easingType, ts: Date.now() } }),
+
   triggerAddLayer: () => set((state) => ({ addLayerTrigger: state.addLayerTrigger + 1 })),
   triggerDuplicateLayer: () => set((state) => ({ duplicateLayerTrigger: state.duplicateLayerTrigger + 1 })),
   triggerDeleteLayer: () => set((state) => ({ deleteLayerTrigger: state.deleteLayerTrigger + 1 })),
+  triggerRenameLayer: (id, name) => set({ renameLayerTrigger: { id, name, ts: Date.now() } }),
   triggerToggleLayerVisibility: (id) => set({ toggleLayerVisibilityTrigger: { id, ts: Date.now() } }),
   triggerToggleAllLayerVisibility: () => set((state) => ({ toggleAllLayerVisibilityTrigger: state.toggleAllLayerVisibilityTrigger + 1 })),
   triggerSetActiveLayer: (id) => set({ setActiveLayerTrigger: { id, ts: Date.now() } }),
+  triggerReparentLayer: (childId, parentId) => set({ reparentLayerTrigger: { childId, parentId, ts: Date.now() } }),
 
   triggerAddFrame: () => set((state) => ({ addFrameTrigger: state.addFrameTrigger + 1 })),
   triggerDeleteFrame: () => set((state) => ({ deleteFrameTrigger: state.deleteFrameTrigger + 1 })),
